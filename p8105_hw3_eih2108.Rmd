@@ -2,17 +2,24 @@
 title: "p8105_hw3_eih2108"
 author: "Ekaterina Hofrenning"
 date: '2023-10-10'
-output: html_document
+output: github_document
 ---
 
+```{r}
+library(readr)
+library(tidyverse)
+library(scrutiny)
+library(knitr)
+```
 
+# Question 1
 
 ```{r}
 # install
 devtools::install_github("p8105/p8105.datasets")
 library(p8105.datasets)
 data(nyc_airbnb)
-library(tidyverse)
+
 
 nyc_airbnb <- nyc_airbnb %>%
   rename(borough = neighbourhood_group) %>%
@@ -38,13 +45,13 @@ First, do some data cleaning:
 - format the data to use appropriate variable names
 - focus on the “Overall Health” topic: include only responses from “Excellent” to “Poor” and organize responses as a factor taking levels ordered from “Poor” to “Excellent”
 
-```{r}
-m1 <-
+```{r, warning = F}
+brfss <-
 brfss_smart2010 %>% 
-  separate(Locationdesc, into = c("State", "County"), sep = "-") %>% # create appropriate state and county vars
+  separate(Locationdesc, into = c("State", "County"), sep = "-") %>% # create appropriate state & cty vars
   select(-c(Locationabbr)) %>%
   mutate(overall_health = as.factor(case_when(Topic == "Overall Health" ~ Response))) %>%
-  select(Year, State, County, Topic, Response, overall_health)
+  mutate(Response = as.factor(Response))
 ```
 
 Using this dataset, do or answer the following (commenting on the results of each):
@@ -52,47 +59,138 @@ Using this dataset, do or answer the following (commenting on the results of eac
 In 2002, which states were observed at 7 or more locations? What about in 2010?
 
 ```{r}
-m1 %>%
+brfss %>%
   filter(Year == 2002) %>%
   group_by(State) %>%
   summarize(num = n_distinct(GeoLocation)) %>%
   filter(num > 7)
 
-m1 %>%
+brfss %>%
   filter(Year == 2010) %>%
   group_by(State) %>%
   summarize(num = n_distinct(GeoLocation)) %>%
   filter(num > 7)
 ```
 
-Construct a dataset that is limited to Excellent responses, and contains, year, state, and a variable that averages the data_value across locations within a state. 
+Construct a dataset that is limited to Excellent responses, and contains year, state, and a variable that averages the data_value across locations within a state. 
 
-```{r}
-m1 %>%
-  
+```{r, warning = F, message = F}
+brfss_avg <- brfss %>%
+    filter(overall_health == "Excellent") %>% # limit to Excellent
+    select(Year, State, GeoLocation, Data_value) %>%
+    group_by(Year, State) %>%
+    summarise(mean_data_value = mean(Data_value)) %>% # average data_value across geo-locations within a state
+    ungroup()
 ```
-
 
 Make a “spaghetti” plot of this average value over time within a state (that is, make a plot showing a line for each state across years – the geom_line geometry and group aesthetic will help).
+
+```{r, warning=FALSE, message=FALSE}
+ggplot(brfss_avg, aes(x = Year, y = mean_data_value, group = State)) +
+  geom_point(size = 1) + 
+  geom_line() +
+  labs(y = "Average Value")
+```
+
 Make a two-panel plot showing, for the years 2006, and 2010, distribution of data_value for responses (“Poor” to “Excellent”) among locations in NY State.
 
+```{r}
+brfss %>%
+  filter(Year %in% c(2006, 2010), 
+         State == "NY ",
+         !is.na(overall_health)) %>%
+  select(Year, County, overall_health, Data_value) %>%
+  arrange(Year, County, overall_health) %>%
+  ggplot(aes(x = overall_health, y = Data_value)) +
+  geom_boxplot() +
+  facet_wrap(~Year) +
+  labs(x = "Overall Health", y = "Data value")
+```
 
+# Question 3
+
+Load, tidy, merge, and otherwise organize the data sets. Your final dataset should include all originally observed variables; exclude participants less than 21 years of age, and those with missing demographic data; and encode data with reasonable variable classes (i.e. not numeric, and using factors with the ordering of tables and plots in mind).
+
+```{r, warning = F, message=FALSE}
+covar <- read_csv("./data/nhanes_covar.csv") %>%
+  row_to_colnames(row = 4) %>%
+  slice_tail(n = 250) %>%
+  mutate(SEQN = as.integer(SEQN), 
+         sex = as.factor(case_when(sex == 1 ~ "Male", sex == 2 ~ "Female")), 
+         age = as.integer(age), 
+         BMI = as.double(BMI), 
+         education = as.factor(case_when(education == 1 ~ "Less than high school",
+                                         education == 2 ~ "High school equivalent",
+                                         education == 3 ~ "More than high school"))) %>%
+  na.omit() %>%
+  filter(age >= 21)
+
+accel <- read_csv("./data/nhanes_accel.csv")
+
+nhanes <- left_join(covar, accel, by = "SEQN") # merge together
+```
+
+Produce a reader-friendly table for the number of men and women in each education category, and create a visualization of the age distributions for men and women in each education category. Comment on these items.
+
+The table below describes the education category and sex breakdowns in the data. The highest education category and sex combination is Females with more than a high school degree (59 people). The lowest education and sex combination is Females with a high school or high school-equivalent degree.
+
+As seen in the graphic below, females completing high school (or high school equivalent) have a higher median age than males of the same education level in our dataset. Similarly, females with less than a high school degree have a slightly higher median age than males of the same education level in our dataset. Males with more than a high school degree have a higher median age than females with the same education level.
+
+```{r, warning=FALSE, message=FALSE}
+# create table
+nhanes %>% 
+  group_by(education, sex) %>%
+  summarize(`Number of People` = n()) %>%
+  ungroup() %>%
+  rename(Education = education, Sex = sex) %>%
+  kable(digits = 1)
+
+# create boxplots (sex, age, education)
+nhanes %>%
+  select(SEQN, sex, age, education) %>%
+  ggplot(aes(x = sex, y = age)) +
+  geom_boxplot() +
+  facet_wrap(~education)
+```
+
+Traditional analyses of accelerometer data focus on the total activity over the day. Using your tidied dataset, aggregate across minutes to create a total activity variable for each participant. Plot these total activities (y-axis) against age (x-axis); your plot should compare men to women and have separate panels for each education level. Include a trend line or a smooth to illustrate differences. Comment on your plot.
+
+```{r, message=FALSE}
+nhanes_sum <- nhanes %>%
+  mutate(activity_per_day = rowSums(select(., contains("min")))) %>%
+  select(SEQN:education, activity_per_day)
+
+ggplot(nhanes_sum, aes(x = age, y = activity_per_day, color = sex)) +
+  geom_point() +
+  geom_smooth(se = F) +
+  facet_wrap(~education) +
+  labs(y = "Activity level per day", x = "Age")
+```
+
+Accelerometer data allows the inspection activity over the course of the day. Make a three-panel plot that shows the 24-hour activity time courses for each education level and use color to indicate sex. Describe in words any patterns or conclusions you can make based on this graph; including smooth trends may help identify differences.
 
 ```{r}
-num_simulations <- 100000
-rewards <- numeric(num_simulations)
-
-# Simulate
-for (i in 1:num_simulations) {
-  reward <- 2^sample(1:100, 1, replace = TRUE)  # Simulate up to 100 flips
-  rewards[i] <- reward
-}
-
-mean_reward <- mean(rewards)
-cat("Mean Reward:", mean_reward, "\n")
+nhanes %>% 
+  pivot_longer(cols = contains("min"), names_to = "minute", values_to = "activity") %>%
+  separate(col = minute, "n", into = c("min_char", "min")) %>%
+  mutate(min = as.integer(min)) %>%
+  ggplot(aes(x = min, y = activity, color = sex)) +
+  geom_point(alpha = .1) +
+  geom_smooth(se = F) +
+  facet_wrap(~education) +
+  labs(x = "Minutes", y = "Activity level")
 ```
 
 
 
+```{r}
+nhanes %>% 
+  pivot_longer(cols = contains("min"), names_to = "minute", values_to = "activity") %>%
+  separate(col = minute, "n", into = c("min_char", "min")) %>%
+  mutate(min = as.integer(min)) %>%
+  ggplot(aes(x = min, y = activity, color = sex)) +
+  geom_point(alpha = .1) +
+  geom_smooth(se = F) +
+  facet_wrap(~education)
+```
 
-# Question 3

@@ -1,5 +1,5 @@
 ---
-title: "p8105_hw3_eih2108"
+title: "Homework 3"
 author: "Ekaterina Hofrenning"
 date: '2023-10-10'
 output: github_document
@@ -39,25 +39,24 @@ aisle_df <- instacart %>%
 
 There are 134 aisles and fresh veggies and fruits are the top two aisles.
 
-```{r}
+```{r, message=FALSE, error=FALSE}
 aisle_10000plus <- aisle_df %>% 
   filter(count > 10000)
 
 ggplot(aisle_10000plus, aes(x = count, y = reorder(aisle, count))) +
   geom_bar(fill = "pink", stat = "identity") + 
-  labs(title = "Barplot Showing Number of Orders from Each Aisle", 
+  labs(title = "Number of Orders from Each Aisle", 
        x = "Aisle Names",
        y = "Count")
 ```
 
 
-```{r}
-bake_ing <- subset(instacart, aisle == "baking ingredients")
-bake_ing <- bake_ing %>% 
+```{r, message=FALSE, error=FALSE}
+bake_ing <- subset(instacart, aisle == "baking ingredients") %>% 
   group_by(product_name) %>% 
   summarise(count = n()) %>% 
   arrange(desc(count))
-head(baking_ingredients)
+head(bake_ing)
 ```
 
 # Question 2
